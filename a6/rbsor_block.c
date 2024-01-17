@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <omp.h>
 
 double lapl(double x1, double x2,double x3,double x4,double x5)
 {
@@ -75,10 +76,11 @@ int main(int argc, char *argv[])
     printf("Blocksize: %d",mP);
     double h = (double) 1/ (N+1);
     
-    double *x,*column;
+    double *x,*column,*x_temp;
     
     //y hat die Größe des Gebiets. x hat einen Layer drumrum, wo Nullen für den Rand und die kommunizierten Werte fürs Interface rein kommen.
     x=(double *)malloc((mP +2)*(mP+2)*sizeof(double));
+    x_temp = (double*)malloc((mP*mP)*sizeof(double));
     column = (double *)malloc((mP)*sizeof(double));
     
     //lokales x hat hier mal Nullen... kann man aber auch anders befüllen...
@@ -252,6 +254,12 @@ int main(int argc, char *argv[])
     // repeat until Abbruchbedingung
     // meine erste do while schleife in jeglicher Programmiersprache
     do {
+        // Abspeichern des lokalen x dieser Iteration (benötigt für die Berechnung des Abbruchkriteriums)
+        for (i=0;i<mP;i++){
+            for (j=0;j<mP;j++){
+                x_temp[i*n+j]=x[(i+1)*(n+2)+(j+1)];
+            }
+        }
     
         // Update red and then black (0=red, 1=black)
         //Blockweise Multiplikation.
@@ -259,6 +267,8 @@ int main(int argc, char *argv[])
 
             for (i=0;i<mP;i++)
             {
+                
+                // parallelize this for loop openmp
                 for (j=0;j<mP;j++)
                 {
                     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -406,7 +416,7 @@ int main(int argc, char *argv[])
         {
             for (j=0;j<mP;j++)
             {
-                local_squaredEuclideanError += (x[(i+1)*(n+2)+j+1]-solution_u((double)i*h,(double)j*h))*(x[(i+1)*(n+2)+j+1]-solution_u((double)i*h,(double)j*h)); 
+                local_squaredEuclideanError += (x[(i+1)*(n+2)+j+1]-x_temp[i*n+j])*(x[(i+1)*(n+2)+j+1]-x_temp[i*n+j]); 
             }
         }
         MPI_Allreduce(&local_squaredEuclideanError,&squaredEuclideanError,1,MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
